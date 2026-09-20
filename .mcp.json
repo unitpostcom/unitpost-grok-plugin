@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "unitpost": {
+      "type": "http",
+      "url": "https://mcp.unitpost.com/mcp",
+      "note": "Official Unitpost MCP server. Uses OAuth 2.1 — on first connection the agent will be prompted to approve in the browser. Sends require approval and a verified domain."
+    }
+  }
+}
