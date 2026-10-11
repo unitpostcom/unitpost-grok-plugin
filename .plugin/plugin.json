@@ -1,0 +1,17 @@
+{
+  "name": "unitpost",
+  "version": "0.1.0",
+  "description": "Let agents send email, with approval. Official Unitpost plugin: hosted MCP server for transactional email, campaigns, contacts, domains, and webhooks. Connects with OAuth 2.1 in the browser.",
+  "author": {
+    "name": "Unitpost",
+    "url": "https://github.com/unitpostcom"
+  },
+  "repository": "https://github.com/unitpostcom/unitpost-grok-plugin",
+  "license": "MIT",
+  "keywords": [
+    "unitpost",
+    "email",
+    "transactional-email",
+    "campaigns"
+  ]
+}
