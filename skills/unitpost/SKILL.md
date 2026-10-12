@@ -409,6 +409,26 @@ const html = render(
 // merge field. No React: parseTsx(`<Section>…</Section>`) then renderToHtml.
 ```
 
+### Simple emails — `text` instead of `html`
+
+For a plain, personal email — "as if I typed it in Gmail", no layout, no brand
+band — pass **`text`** instead of `html` to `email_templates_create` /
+`email_templates_update` (exactly one of the two). Write what a person would
+type into a compose box:
+
+- one line per line; a **blank line** between paragraphs;
+- `- ` bullets or `1. ` numbers for lists;
+- emphasis and links with Gmail's inline tags only: `<b>`, `<i>`, `<u>`,
+  `<a href="…">`. **No Markdown** — `**bold**` and `[link](url)` stay literal,
+  exactly as they would in Gmail, Outlook or Spark;
+- `{{first_name}}`-style variables are fine.
+
+It sends as a bare mail-client fragment (`<div dir="ltr"><div>…</div></div>`):
+no doctype, tables, widths or colours. Marketing templates end with one plain
+footer line (sender · Unsubscribe · Sent with Unitpost) added at send time —
+never write it yourself. Max 20,000 characters. Use `html` (and
+`@unitpost/email`) for anything designed: newsletters, promos, product emails.
+
 ## How to send an email
 
 Provide `from` (on a verified domain), `to`, `subject`, and content as EITHER

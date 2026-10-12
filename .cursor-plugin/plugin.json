@@ -1,0 +1,19 @@
+{
+  "name": "unitpost",
+  "displayName": "Unitpost",
+  "description": "Your AI Agent sends the messages. Official Unitpost plugin: email and SMS infrastructure, run by your agent. Send transactional email and SMS, run campaigns, and manage contacts, templates, domains, and webhooks. Connects with OAuth 2.1 in the browser.",
+  "author": {
+    "name": "Unitpost",
+    "email": "support@unitpost.com"
+  },
+  "homepage": "https://www.unitpost.com/ai/mcp",
+  "repository": "https://github.com/unitpostcom/unitpost-grok-plugin",
+  "license": "MIT",
+  "keywords": [
+    "unitpost",
+    "unitpost mcp",
+    "unitpost email",
+    "unitpost sms"
+  ],
+  "logo": "assets/logo.svg"
+}

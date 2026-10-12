@@ -1,0 +1,15 @@
+{
+  "name": "unitpost",
+  "description": "Official Unitpost plugin for Claude Code.",
+  "owner": {
+    "name": "Unitpost",
+    "email": "support@unitpost.com"
+  },
+  "plugins": [
+    {
+      "name": "unitpost",
+      "source": "./",
+      "description": "Email and SMS infrastructure, run by your agent."
+    }
+  ]
+}
