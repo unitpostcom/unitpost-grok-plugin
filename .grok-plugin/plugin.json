@@ -1,9 +1,10 @@
 {
   "name": "unitpost",
-  "description": "Your AI Agent sends the messages. Official Unitpost plugin: email and SMS infrastructure, run by your agent. Send transactional email and SMS, run campaigns, and manage contacts, templates, domains, and webhooks. Connects with OAuth 2.1 in the browser.",
+  "version": "1.0.0",
+  "description": "Your AI Agent sends the messages. Official Unitpost plugin for Grok: email and SMS infrastructure, run by your agent. Send transactional email and SMS, run campaigns, and manage contacts, templates, domains, and webhooks through Unitpost's hosted MCP server (OAuth 2.1).",
   "author": {
     "name": "Unitpost",
-    "url": "https://github.com/unitpostcom"
+    "url": "https://www.unitpost.com"
   },
   "homepage": "https://www.unitpost.com/ai/mcp",
   "repository": "https://github.com/unitpostcom/unitpost-grok-plugin",

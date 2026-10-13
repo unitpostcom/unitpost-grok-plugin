@@ -28,8 +28,9 @@ Use this skill whenever the user wants to:
 - Send an **SMS** (paid plans): a transactional or marketing text, with consent, senders, and country reach. See **SMS** below.
 - Manage **contacts**, custom **contact fields**, **segments**, or subscription
   **topics**.
-- Create or edit **templates** (author the `design` with the `@unitpost/email`
-  component library, not raw HTML).
+- Create or edit **templates** — a **designed** email as `html` built with the
+  `@unitpost/email` component library, or a **simple** (Gmail-style) email as
+  `text`. Every template read carries its `kind`; keep it when you edit.
 - Read or import **Brand Kit** profiles for on-brand generation —
   `brand_kits_list` / `brand_kits_get` / `brand_kits_import` (MCP; import is
   MCP-only, not a public write API).
@@ -54,17 +55,7 @@ The Unitpost MCP server exposes one tool per API operation (named
 | **Auth (recommended)** | OAuth 2.1 — add the URL, approve in the browser, no key to copy |
 | **Auth (legacy)** | `Authorization: Bearer pk_live_…` — API key from **https://www.unitpost.com → Settings → API keys** |
 
-**Where to connect (full steps: `/docs/ai/<client>`, for example `/docs/ai/cursor`):**
-
-- **Claude Code** — `claude mcp add --transport http unitpost https://mcp.unitpost.com/mcp`, approve in the browser
-- **Claude Desktop** — **Settings → Connectors → Add custom connector**, paste the URL, approve in the browser
-- **ChatGPT / Codex** — add the URL as a connector, approve in the browser
-- **Copilot / VS Code** — `.vscode/mcp.json` with the URL, approve in the browser
-- **Cursor** — add the server URL, approve in the browser (OAuth, incl. reconnect). Legacy: `~/.cursor/mcp.json` (or `.cursor/mcp.json`) `url` + `headers.Authorization` with a key
-- **Gemini / Windsurf / Codex CLI** — server URL with OAuth where supported, else `headers.Authorization` with a key
-- **Legacy key configs** — `~/.codex/config.toml` (`http_headers.Authorization`), `~/.gemini/settings.json` (`httpUrl` + headers), `~/.codeium/windsurf/mcp_config.json` (`serverUrl` + headers), Claude Desktop `mcp-remote` bridge in `claude_desktop_config.json` (top-level `mcpServers`, not nested under `preferences`)
-
-Always keep the `Bearer ` prefix unless the client prompt says otherwise (Copilot). Scope the key (or approve only the scopes) the agent needs.
+**Grok** — the Unitpost plugin connects this server for you. On first use, Grok opens Unitpost in the browser: sign in, pick a workspace, and approve. Full steps: `https://www.unitpost.com/docs/ai/grok`.
 
 ### Option B — REST API
 
@@ -411,23 +402,52 @@ const html = render(
 
 ### Simple emails — `text` instead of `html`
 
-For a plain, personal email — "as if I typed it in Gmail", no layout, no brand
-band — pass **`text`** instead of `html` to `email_templates_create` /
-`email_templates_update` (exactly one of the two). Write what a person would
-type into a compose box:
+A template is one of two **kinds**, and every template read
+(`email_templates_get` / `_list`) says which in `kind`:
 
-- one line per line; a **blank line** between paragraphs;
-- `- ` bullets or `1. ` numbers for lists;
-- emphasis and links with Gmail's inline tags only: `<b>`, `<i>`, `<u>`,
-  `<a href="…">`. **No Markdown** — `**bold**` and `[link](url)` stay literal,
-  exactly as they would in Gmail, Outlook or Spark;
-- `{{first_name}}`-style variables are fine.
+- **`designed`** — newsletters, promos, product emails: `html`, composed with
+  `@unitpost/email` as above (the dashboard's Design / Code editor).
+- **`simple`** — a plain, personal email, "as if I typed it in Gmail", no
+  layout and no brand band (the dashboard's Simple editor).
+
+For a simple email pass **`text`** instead of `html` to `email_templates_create`
+/ `email_templates_update` (exactly one of the two). **When you update a
+template, keep its kind**: `text` for a `simple` template, `html` for a
+`designed` one. Sending the other field converts it (html → designed code
+mode, text → simple), so only do that when the user asks to switch.
+
+`text` is what a person types into a compose box, and it can carry everything
+the Simple editor can:
+
+- one line per line; a **blank line** between paragraphs — blank lines are the
+  only spacing;
+- `- ` (or `* `) bullets and `1. ` numbers for lists, one item per line;
+- inline `<b>`, `<i>`, `<u>`, `<s>`, `<a href="…">`, and `<br>` for a line
+  break inside a line;
+- colour, highlight, size and font with one span:
+  `<span style="color:#cc0000; background-color:#fff3a0; font-size:18px; font-family:Georgia">…</span>`
+  — sizes snap to Gmail's Small 13px / Normal / Large 18px / Huge 24px; fonts
+  are Arial, Helvetica, Verdana, Tahoma, Trebuchet MS, Georgia, Times New
+  Roman, Courier New. A title is `<b><span style="font-size:24px">…</span></b>`
+  on its own line;
+- alignment: wrap one whole line in `<div style="text-align:center">…</div>`
+  (or `right`);
+- an image alone on its own line: `<img src="/img/{id}" alt="…" width="400">`
+  (optionally inside `<a href>`); `src` is a library `/img/{id}` or an
+  `https://` URL — never invent one;
+- `{{first_name}}`-style variables anywhere.
+
+**Not supported** — removed when the template is saved, so don't send them:
+headings (`<h1>`…), layout (sections, columns, spacers, buttons, dividers),
+`@unitpost/email` components, `<p>` / `<div>` / `<table>` / `<ul>`, any other
+CSS, and Markdown — `**bold**` and `[link](url)` stay literal, exactly as they
+would in Gmail, Outlook or Spark.
 
 It sends as a bare mail-client fragment (`<div dir="ltr"><div>…</div></div>`):
-no doctype, tables, widths or colours. Marketing templates end with one plain
-footer line (sender · Unsubscribe · Sent with Unitpost) added at send time —
-never write it yourself. Max 20,000 characters. Use `html` (and
-`@unitpost/email`) for anything designed: newsletters, promos, product emails.
+no doctype, tables, widths or background. Marketing templates end with one
+plain footer line (sender · Unsubscribe · Sent with Unitpost) added at send
+time — never write it yourself. Max 20,000 characters. Use `html` (and
+`@unitpost/email`) for anything designed.
 
 ## How to send an email
 
@@ -440,7 +460,18 @@ show next to the message.
 Do **not** put `first_name`, `last_name`, `email`, or `unsubscribe_url` in
 `template.variables` — those are reserved (contact / system). Custom keys like
 `coupon` or `cta_url` are fine. The template design may still contain
-`{{first_name}}`; it resolves from the contact at send.
+`{{first_name}}`; it resolves from the contact at send. On a template send the
+`from` display name can use variables too (`"{{company_name}} Team
+<hi@mail.acme.com>"`); a raw `html`/`text` send fills no variables and refuses
+a `{{…}}` in its `from` name.
+
+A **marketing** template goes to exactly one recipient (no cc/bcc), and that
+recipient becomes a **contact** if they aren't one yet — the unsubscribe link
+belongs to a contact. Tell the user when a send will add someone to their
+contacts. On the Free plan it counts toward the contact limit (at the limit the
+send is refused); an address that already unsubscribed is added as
+unsubscribed and the email is suppressed. Transactional templates never create
+contacts. To send marketing to many people, use a campaign.
 
 ```json
 {
@@ -504,10 +535,49 @@ pagination, and idempotency rules apply; the tools are `sms_send`, `sms_get`, `s
 `GET /sms/brands`, `GET /sms/numbers`, `GET|POST /contacts/{id}/sms-consent`.
 In the SDKs the resource is `sms` (`unitpost.sms.send(...)`).
 
+**SMS templates and topics** mirror their email counterparts under the SMS
+channel, with the same scopes (`templates:*`, `topics:*`): `sms_templates_list`
+/ `sms_templates_create` / `sms_templates_get` / `sms_templates_update` /
+`sms_templates_delete` (`/sms/templates`, ids `tmpl_`) and `sms_topics_list` /
+`sms_topics_create` / `sms_topics_get` / `sms_topics_update` /
+`sms_topics_delete` (`/sms/topics`, ids `top_`). An SMS template is a
+plain-text `body` with `{{variables}}`, created as a `draft`; only `published`
+templates can be sent by an SMS campaign, and publishing needs a non-blank
+`body` (`422` otherwise). Topics carry `channel` (`"email"` or `"sms"`), also
+on a contact's topic subscriptions. SMS topics are separate from email
+topics: an email opt-out never changes an SMS preference, and STOP still opts
+a number out of every SMS. An email template or topic id returns `404` on the
+SMS tools (and the reverse). In the SDKs: `unitpost.sms.templates.*`,
+`unitpost.sms.topics.*`.
+
+**SMS campaigns** send a published SMS template to a segment
+(`/sms/campaigns`, ids `cmp_`), with the email campaign scopes:
+`sms_campaigns_list` / `sms_campaigns_get` / `sms_campaigns_validate` need
+`campaigns:read`, `sms_campaigns_create` / `sms_campaigns_update` /
+`sms_campaigns_delete` need `campaigns:write`, and `sms_campaigns_send` /
+`sms_campaigns_cancel` / `sms_campaigns_pause` / `sms_campaigns_resume` /
+`sms_campaigns_reschedule` need `campaigns:send`. Create makes a `draft`
+(omit `sender_id` for automatic routing; `snum_…` pins one sender;
+`scheduled_at` saves a send time); edits are draft-only (`409` after, and
+while archived). Before sending, run `sms_campaigns_validate`: it returns
+`can_send`, `blockers`, `reachable`, `no_marketing_consent` and
+`quiet_hours_deferred`, without sending. `sms_campaigns_send` runs the same
+checks as the dashboard: with no `scheduled_at` it uses the draft's saved
+send time if that is still ahead (otherwise sends now), `null` sends now, a
+time schedules it. A blocked send is `409` with each reason in
+`error.details[]` (`field` = what to fix, `code` = why). Delete archives
+(`409` while a campaign is in flight: cancel first); `sms_campaigns_update`
+with `{ archived: false }` restores, and `sms_campaigns_list` with
+`archived=true` lists archived ones. In the SDKs:
+`unitpost.sms.campaigns.*`.
+
 **Paid plans only.** SMS is included on every paid plan and not on the free
-plan. On a free workspace `sms_send` (`POST /sms`) returns `403` with
+plan. On a free workspace `sms_send` (`POST /sms`) and the campaign
+send-class tools (`sms_campaigns_create`, `sms_campaigns_send`,
+`sms_campaigns_resume`, `sms_campaigns_reschedule`) return `403` with
 `error.code` `limit_reached`; the reads (`sms_get`, `sms_list`,
-`sms_brands_list`, `sms_numbers_list`) keep working. A workspace whose paid
+`sms_brands_list`, `sms_numbers_list`, `sms_campaigns_list`,
+`sms_campaigns_get`, `sms_campaigns_validate`) keep working. A workspace whose paid
 plan just ended has a 7-day grace window before that `403`; sends in it draw
 purchased credit only, so without any they get `429` `quota_exceeded`.
 Tell the user in one sentence that SMS needs a paid plan and point them at
@@ -624,9 +694,14 @@ and the `sms.suppressed` webhook `reason`.
 - `sms_send` delivers a real message to a real phone and costs money. Show
   the user the sender, the recipient, and the body, and get an explicit
   go-ahead first. Never send to a list you have not checked for consent.
+- `sms_campaigns_send` texts a whole segment and costs money. Run
+  `sms_campaigns_validate` first, show the user the reachable count, the
+  template body and the schedule (including a saved `scheduled_at`), and get
+  an explicit go-ahead.
 - The recipient must be E.164 (`+14155550123`).
-- A `403` with `limit_reached` from `sms_send` means the plan does not
-  include SMS (see **Paid plans only** above). Say so; do not retry.
+- A `403` with `limit_reached` from `sms_send` or an `sms_campaigns_*`
+  create/send/resume/reschedule means the plan does not include SMS (see
+  **Paid plans only** above). Say so; do not retry.
 - A `404` from every `sms_*` tool means SMS is switched off for the
   deployment. Say SMS is not available right now; do not retry.
 
