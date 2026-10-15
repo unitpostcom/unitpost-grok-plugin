@@ -246,8 +246,9 @@ user is working in a terminal, writing a shell script, or wiring a CI step —
 and when you want to **show the user a command they can re-run themselves**.
 
 ```bash
-npm install -g unitpost-cli      # binary: `unitpost`; needs Node 20+
-npx unitpost-cli@latest --help   # or run it once without installing
+brew install unitpostcom/tap/unitpost               # standalone binary, no Node.js
+curl -fsSL https://www.unitpost.com/install.sh | sh  # same, without Homebrew (Windows: irm https://www.unitpost.com/install.ps1 | iex)
+npm install -g unitpost-cli                          # or npm, with Node 20+ (npx unitpost-cli@latest for a one-off)
 
 unitpost login                   # browser OAuth (same AS as MCP)
 unitpost login --key pk_live_…   # or store an API key instead
@@ -292,6 +293,12 @@ retrying.
 `email_campaigns_send` fail if the `from` domain isn't verified. The flow is:
 `email_domains_create` → publish the returned DNS `records` → `email_domains_verify` →
 then send.
+
+**Custom-field defaults.** A contact field's `default_value` is the value used
+for any contact that has none: when an email is sent (merge tags) and when
+segments are evaluated. It's never written onto contacts, so changing it takes
+effect everywhere at once. In segment filters, `is_set` / `is_not_set` check
+whether the contact itself has a value.
 
 **Cursor pagination.** List tools take `limit` (≤100), `after`, `before` and
 return `{ object: "list", has_more, data }`. To page, pass the last item's id
@@ -530,9 +537,13 @@ Send a saved template:
 
 Unitpost also sends SMS, on paid plans. The same key, scopes, error envelope,
 pagination, and idempotency rules apply; the tools are `sms_send`, `sms_get`, `sms_list`,
-`sms_brands_list`, `sms_numbers_list`, plus the contact pair `sms_consent_get`
+`sms_stats`, `sms_brands_list`, `sms_numbers_list`, plus the contact pair `sms_consent_get`
 / `sms_consent_record`. REST: `POST /sms`, `GET /sms/{id}`, `GET /sms`,
-`GET /sms/brands`, `GET /sms/numbers`, `GET|POST /contacts/{id}/sms-consent`.
+`GET /sms/stats`, `GET /sms/brands`, `GET /sms/numbers`, `GET|POST /contacts/{id}/sms-consent`.
+`sms_stats` is the SMS twin of `email_stats`: queued, sent, delivered, failed,
+suppressed (skipped on purpose), canceled, inbound and segments billed over
+`days` (default 30), with delivery, failure and suppression rates. There are
+no open or click numbers on SMS.
 In the SDKs the resource is `sms` (`unitpost.sms.send(...)`).
 
 **SMS templates and topics** mirror their email counterparts under the SMS
@@ -575,7 +586,7 @@ with `{ archived: false }` restores, and `sms_campaigns_list` with
 plan. On a free workspace `sms_send` (`POST /sms`) and the campaign
 send-class tools (`sms_campaigns_create`, `sms_campaigns_send`,
 `sms_campaigns_resume`, `sms_campaigns_reschedule`) return `403` with
-`error.code` `limit_reached`; the reads (`sms_get`, `sms_list`,
+`error.code` `limit_reached`; the reads (`sms_get`, `sms_list`, `sms_stats`,
 `sms_brands_list`, `sms_numbers_list`, `sms_campaigns_list`,
 `sms_campaigns_get`, `sms_campaigns_validate`) keep working. A workspace whose paid
 plan just ended has a 7-day grace window before that `403`; sends in it draw
