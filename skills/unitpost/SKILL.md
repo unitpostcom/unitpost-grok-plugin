@@ -279,7 +279,9 @@ the convenience flags, scripting/CI rules, exit codes, and profiles.
 **Object-prefixed IDs.** Every id is prefixed by type — `email_`, `batch_`,
 `inb_` (inbound), `dom_`, `con_`, `cf_` (contact field), `imp_` (import),
 `seg_`, `cmp_`, `tmpl_`, `bk_` (brand kit), `top_`, `key_`, `wh_`, `supp_`,
-`evt_` (event), `atm_` (automation), `run_` (automation run). Pass ids back
+`evt_` (event), `atm_` (automation), `run_` (automation run), `job_`
+(background job — returned with `202` by a large custom-field delete/rename).
+Pass ids back
 exactly as returned. Many single-resource contact/suppression endpoints also
 accept a plain **email address** in place of the id.
 
