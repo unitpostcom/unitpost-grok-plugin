@@ -482,6 +482,14 @@ send is refused); an address that already unsubscribed is added as
 unsubscribed and the email is suppressed. Transactional templates never create
 contacts. To send marketing to many people, use a campaign.
 
+Lifecycle mail the user renders themselves (onboarding, digests, alerts sent
+as raw `html`/`text`) gets no footer or unsubscribe header from Unitpost. If
+they run their own unsubscribe, put it in `headers`: `List-Unsubscribe` with
+one or more `<…>` entries that are `https://` or `mailto:`, and for Gmail's
+one-click button `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (which
+needs an `https://` entry). The same works over SMTP. A marketing template
+refuses these two headers because Unitpost adds its own.
+
 ```json
 {
   "from": "Acme <hello@mail.acme.com>",
