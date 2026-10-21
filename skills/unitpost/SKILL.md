@@ -703,7 +703,7 @@ and the `sms.suppressed` webhook `reason`.
 | Code | Meaning | What fixes it |
 |---|---|---|
 | `out_of_reach` | No sender on the message or campaign covers the recipient's country | Request a sender for that country |
-| `unsupported_country` | Inside reach, but Unitpost has no compliance rule for the country yet | Transactional still sends; marketing rules for that country are on the roadmap |
+| `unsupported_country` | Inside reach, but Unitpost has no compliance rule for the country yet, or SMS to that country is paused for now (every message, until it resumes) | Without a rule, transactional still sends; marketing rules for that country are on the roadmap. A pause refuses new sends (403) and skips queued ones unbilled; it resumes on its own |
 | `no_phone` | The contact has no SMS number | Add a phone number to the contact |
 | `opted_out` | STOP, the suppression list, or the number is unreachable | The recipient re-opts in by texting START or from the preference page |
 | `no_marketing_consent` | Marketing without express consent on record | Record consent the recipient actually gave |
