@@ -36,7 +36,8 @@ Use this skill whenever the user wants to:
 - Read or import **Brand Kit** profiles for on-brand generation —
   `brand_kits_list` / `brand_kits_get` / `brand_kits_import` (MCP; import is
   MCP-only, not a public write API).
-- Add and **verify sending domains** (DNS records).
+- Add and **verify sending domains** (DNS records), and turn on **receiving**
+  for a verified domain.
 - Read **inbound email** received on a receiving-enabled domain.
 - Configure **webhooks** for delivery/engagement events.
 - Manage the **suppression** list.
@@ -328,6 +329,18 @@ user fixes DNS). The flow is: `email_domains_create` → publish the returned DN
 `records` → `email_domains_verify` → then send. DNS can take minutes to hours,
 and Unitpost keeps re-checking a pending domain in the background, so don't
 loop `email_domains_verify`: tell the user, and read `email_domains_get` later.
+
+**Receiving (inbound mail).** A verified domain can also receive: mail to any
+address at it is stored (`email_received_list`) and fires the `email.received`
+webhook. Turn it on with `email_domains_update` and
+`capabilities: { receiving: "enabled" }` (409 while the domain isn't
+`verified`), then `email_domains_verify` to check the name's MX records. The
+domain's `receiving.record` is the MX record to publish. It takes **all** mail
+for that name, so when `receiving.checks.other_mx_found` is `true` the name
+already gets mail somewhere (Google Workspace, Microsoft 365, …): don't have the
+user publish it there; add a subdomain such as `inbound.example.com` as its own
+domain and receive on that. Mail arrives once `receiving.status` is
+`verified`. `{ receiving: "disabled" }` turns it off.
 
 **Custom-field defaults.** A contact field's `default_value` is the value used
 for any contact that has none: when an email is sent (merge tags) and when
@@ -1084,8 +1097,10 @@ OpenAPI contract. So these three are the same thing:
 | SDK method | `unitpost.email.templates.create(...)` |
 | CLI command | `unitpost email templates create` |
 
-The practical consequence: if you know the MCP tool name, you know the command
-— replace the underscores with spaces. A new endpoint becomes a new command
+The practical consequence: the MCP tool name with spaces for underscores is
+usually the command. Some aren't (`contact_imports_create` is
+`unitpost contacts imports create`), and the table under the command map lists
+every one, so check it before you guess. A new endpoint becomes a new command
 with no CLI release, so the tree below is what the API has today.
 
 ### Command map
@@ -1110,6 +1125,35 @@ plus 30 `sms` commands (the last row).
 | jobs | 1 | get |
 | usage | 1 | get |
 | sms | 30 | brands, get, list, numbers, send, stats, update; campaigns (cancel, create, delete, get, list, pause, reschedule, resume, send, update, validate); consent (record, get); templates (create, delete, get, list, update); topics (create, delete, get, list, update) |
+
+Where the command isn't the MCP tool name with spaces for underscores:
+
+| MCP tool | CLI command |
+|---|---|
+| `email_send_batch` | `unitpost email batch` |
+| `sms_brands_list` | `unitpost sms brands` |
+| `sms_numbers_list` | `unitpost sms numbers` |
+| `email_received_attachment_url` | `unitpost email received attachment-url` |
+| `contact_imports_list` | `unitpost contacts imports list` |
+| `contact_imports_create` | `unitpost contacts imports create` |
+| `contact_imports_get` | `unitpost contacts imports get` |
+| `contact_imports_cancel` | `unitpost contacts cancel-import` |
+| `contact_fields_list` | `unitpost contact-fields list` |
+| `contact_fields_create` | `unitpost contact-fields create` |
+| `contact_fields_get` | `unitpost contact-fields get` |
+| `contact_fields_update` | `unitpost contact-fields update` |
+| `contact_fields_delete` | `unitpost contact-fields delete` |
+| `contact_fields_rename` | `unitpost contact-fields rename` |
+| `segments_list_members` | `unitpost segments members list` |
+| `segments_add_member` | `unitpost segments members add` |
+| `segments_remove_member` | `unitpost segments members remove` |
+| `contact_topics_list` | `unitpost contacts topics list` |
+| `contact_topics_set` | `unitpost contacts topics set` |
+| `email_templates_test_send` | `unitpost email templates test-send` |
+| `brand_kits_list` | `unitpost brand-kits list` |
+| `brand_kits_get` | `unitpost brand-kits get` |
+| `webhooks_rotate_secret` | `unitpost webhooks rotate-secret` |
+| `webhooks_list_deliveries` | `unitpost webhooks list-deliveries` |
 <!-- /generated:cli-command-map -->
 
 Plus the CLI's own utilities (these are about the CLI, not the API):
@@ -1249,33 +1293,49 @@ what separates a clean run from a pile of 4xx retries.
    (`contacts_list`, `segments_list`, `email_templates_list`,
    `email_domains_list`, …) using what the user said — never construct an id.
    Read a record's current `status` before changing it.
-2. **Check before anything that sends or goes live.** Before `email_send`,
-   confirm the `from` domain's `status` is `verified` or `degraded` in
-   `email_domains_list`. Before `email_campaigns_send`, run
-   `email_campaigns_validate` and continue only when `can_send` is true —
-   otherwise tell the user each `blockers[].message`.
-   Before `automations_publish`, run `automations_validate` and continue only
-   when `ok` and `readiness.ready` are true — tell the user each
-   `readiness.items[]` blocker or needs_input (its `message` and `fix`). Then
-   ask the user to approve, showing what will happen (`readiness.journey`).
+2. **Check before anything that sends or goes live.** Run the *Before* check
+   in [Checks before you act](#checks-before-you-act) and stop when it fails:
+   tell the user what it found instead of calling the tool anyway.
 3. **Errors tell you the next move.** Every MCP error result carries `hint`
    (and `data.error.code`). Follow it. Never resend an identical call that
    failed with a 4xx — fix the fields in `error.details`, or ask the user for
    the missing value. A `5xx` may be retried once, with the same
-   `idempotency_key`.
-4. **Verify, then report.** After a write, read it back and check the end
-   state before you say it's done — `email_campaigns_pause` → `email_campaigns_get`
-   shows `status` `paused`; `email_campaigns_send` → `scheduled`, `sending` or
-   `sent`; `email_campaigns_reschedule` → `scheduled` at the time you asked;
-   `email_update` (cancel) → `email_get` shows `canceled`;
-   `automations_publish` → `automations_get` shows `active`. Report what the API
-   confirmed, with the record's name and id. Never say something was sent,
-   scheduled, or created unless a call succeeded.
+   `idempotency_key`. If calls keep failing with `5xx` or time out across
+   different tools, check https://status.unitpost.com (machine-readable:
+   `https://status.unitpost.com/status.json`) and tell the user what it says
+   before trying again.
+4. **Verify, then report.** After a write, run its *After* read-back in
+   [Checks before you act](#checks-before-you-act) and say it's done only when
+   the end state matches. Report what the API confirmed, with the record's
+   name and id. Never say something was sent, scheduled, or created unless a
+   call succeeded.
 5. **Lists are pages.** Follow `after` / `limit` cursors when the user asks
    about "all"; never present one page as the total.
 6. **Times carry a zone.** `scheduled_at` is ISO 8601 with `Z` or an offset;
    resolve "tomorrow at 9" in the user's timezone, and say the time back to
    them in that zone.
+
+### Checks before you act
+
+The MCP server's instructions carry this same table, and Ask Unit's own
+checks are tested against it. *Before* runs ahead of the call; *After* is the
+read-back that tells you the write really landed.
+
+<!-- generated:agent-checks (packages/contracts agent-checks.ts via tools/sdk-codegen; do not edit) -->
+| Tool | Before you call it | After it succeeds |
+|---|---|---|
+| `email_send` | `email_domains_list`: the `from` domain's `status` is `verified` or `degraded` (`degraded` still sends while the user fixes DNS) | the response: `status` is `scheduled` when you passed `scheduled_at`: a time in the past or under 30 s ahead sends now |
+| `email_send_batch` | `email_domains_list`: every `from` domain's `status` is `verified` or `degraded` | the response: `failed[]` is empty; otherwise retry only the items it lists |
+| `email_campaigns_send` | `email_campaigns_validate`: `can_send` is `true`; otherwise tell the user each `blockers[].message`, fix them, and validate again | `email_campaigns_get`: `status` is `scheduled` (at the `scheduled_at` you meant), `sending` or `sent` |
+| `email_campaigns_pause` |  | `email_campaigns_get`: `status` is `paused` |
+| `email_campaigns_resume` | `email_campaigns_get`: read `pause_reason`: after a delivery-quality pause (`code` `hard_bounce_rate`, `complaint_rate` or `quality_review`) confirm with the user that the list is opted-in and cleaned first; `resume` `review_required` means staff must review it first; any other `code` has its fix in `message` | `email_campaigns_get`: `status` is `scheduled`, `sending` or `sent` |
+| `email_campaigns_cancel` |  | `email_campaigns_get`: `status` is `canceled` |
+| `email_campaigns_reschedule` |  | `email_campaigns_get`: `status` is `scheduled` and `scheduled_at` is the time you asked for (read back in UTC) |
+| `email_update` |  | `email_get`: `status` is `canceled` after a cancel, or `scheduled` at the new `scheduled_at` after a move |
+| `email_domains_verify` | `email_domains_get`: DNS can take minutes to hours and Unitpost keeps re-checking a pending domain in the background, so call verify once, never in a loop | `email_domains_get`: `status` `verified` or `degraded` can send; `pending` or `verifying`: tell the user and read it again later; `failed`: `email_domains_diagnose` lists each fix |
+| `email_domains_update` | `email_domains_get`: to turn receiving on (`capabilities.receiving` `enabled`) the domain's `status` is `verified` or `degraded`; before the user publishes `receiving.record`, `receiving.checks.other_mx_found` `true` means the name already gets mail elsewhere and the record takes it over, so confirm with the user or receive on a subdomain | `email_domains_get`: `capabilities.receiving` is `enabled` or `disabled` as you set it; mail arrives once `receiving.status` is `verified` (the record is published and `email_domains_verify` has seen it) |
+| `contacts_update` | `contacts_get`: when you send `custom_fields`, start from the contact's current `custom_fields`: the map you send replaces the whole map |  |
+<!-- /generated:agent-checks -->
 
 ## Safety rules — READ BEFORE ACTING
 
