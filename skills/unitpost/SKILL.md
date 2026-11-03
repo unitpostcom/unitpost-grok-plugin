@@ -116,7 +116,7 @@ Sending an email with each SDK (reads `UNITPOST_API_KEY` from the env):
 // Node.js / TypeScript
 import { Unitpost } from "unitpost";
 
-const unitpost = new Unitpost(process.env.UNITPOST_API_KEY);
+const unitpost = new Unitpost(); // reads UNITPOST_API_KEY
 
 const { data, error } = await unitpost.email.send({
   from: "you@yourdomain.com",
@@ -322,6 +322,7 @@ address), `img_` (library image; a template uses its `path`, `/img/…`), `job_`
 `msg_` (webhook delivery; its `svix_id` is the `svix-id` header it was sent with),
 `emev_` (one sent email's delivery event, `GET /email/{id}/events`), `act_`
 (an activity-log row, `GET /activity`), `ws_` (your workspace, `GET /whoami`),
+`org_` (the organization your workspace belongs to, `GET /whoami`),
 `rlog_` (an API request-log row, `GET /logs`).
 Pass ids back
 exactly as returned. Many single-resource contact/suppression endpoints also
@@ -822,6 +823,30 @@ its `older_cursor`.
    `email_campaigns_remove_affected` takes them out of a static segment for
    good: confirm with the user first.
 
+### Deliverability: warn before a risky send
+
+Relay every `warnings[]` entry from step 2 with its `guide_url`. Also tell the
+user, one line each, when your reads show any of these, and link the guide; then
+let them decide:
+
+- a From domain verified in the last few weeks or with no sending history, or a
+  send far larger than any before it:
+  https://unitpost.com/blog/deliverability/warm-up-new-sending-domain
+- the same segment mailed in the last day or two:
+  https://unitpost.com/blog/deliverability/email-sending-frequency
+- a list imported recently or not mailed in months:
+  https://unitpost.com/blog/deliverability/email-list-hygiene
+- no DMARC record on the From domain:
+  https://unitpost.com/blog/deliverability/bulk-sender-requirements-gmail-yahoo-microsoft
+
+When you write a subject or body: no fake `Re:`/`Fwd:`, no ALL-CAPS words or
+`!!!`, at most one emoji, always a `preview_text`, full links on the sender's
+own domain (no URL shorteners), and real text rather than one image
+(https://unitpost.com/blog/deliverability/email-copy-deliverability). After an
+automatic quality pause, explain the bounce codes
+(https://unitpost.com/blog/deliverability/email-bounce-codes-explained) and the
+way back (https://unitpost.com/blog/deliverability/recover-sender-reputation).
+
 ## SMS
 
 Unitpost also sends SMS, on paid plans. The same key, scopes, error envelope,
@@ -1072,7 +1097,7 @@ promise replies elsewhere.
 ```ts
 import { Unitpost, verifyWebhook } from "unitpost";
 
-const unitpost = new Unitpost(process.env.UNITPOST_API_KEY);
+const unitpost = new Unitpost(); // reads UNITPOST_API_KEY
 
 export async function onWebhook(rawBody: string, headers: Record<string, string>) {
   const event = verifyWebhook<{ type: string; data: { from: string; body: string; keyword: string | null; auto_replied: boolean } }>({
@@ -1512,9 +1537,10 @@ broken setup (version, credential, storage mode, API reachability),
   `unitpost email batch`, and `unitpost email campaigns send` deliver mail to
   real people from a shell with no undo. The confirmation rules in
   [Safety rules](#safety-rules--read-before-acting) apply identically here.
-- **Never echo a key into a command you show the user.** Reference
-  `$UNITPOST_API_KEY` or tell them to run `unitpost login`. Don't paste a
-  resolved key into a snippet, a log, or a commit.
+- **Never echo a key into a command you show the user.** Leave `--api-key`
+  out: the CLI finds its own credential. If it has none, tell them to run
+  `unitpost login`. Don't paste a resolved key into a snippet, a log, or a
+  commit.
 
 ## Working loop — get it right the first time
 
