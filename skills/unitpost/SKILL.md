@@ -1575,9 +1575,8 @@ what separates a clean run from a pile of 4xx retries.
 
 ### Checks before you act
 
-On the MCP server each guarded tool's description carries its own row of this
-table (the `unitpost://guides/agent-rules` resource has the whole table), and
-Ask Unit's own checks are tested against it. *Before* runs ahead of the call;
+On the MCP server the `unitpost://guides/agent-rules` resource has this whole
+table, and Ask Unit's own checks are tested against it. *Before* runs ahead of the call;
 *After* is the read-back that tells you the write really landed.
 
 <!-- generated:agent-checks (packages/contracts agent-checks.ts via tools/sdk-codegen; do not edit) -->
