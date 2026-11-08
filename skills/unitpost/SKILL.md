@@ -17,8 +17,8 @@ marketing campaigns, and manage the audience, deliverability, and inbound mail
 around them.
 On paid plans it also sends SMS through the same API key, contacts, and webhooks.
 This skill teaches you to drive Unitpost correctly and safely,
-whether through the **Unitpost MCP server** (preferred — tools map 1:1 to the
-API) or the **REST API** at `https://www.unitpost.com/api/v1`.
+whether through the **Unitpost MCP server** (preferred — its workspace tools map
+1:1 to the API) or the **REST API** at `https://www.unitpost.com/api/v1`.
 
 ## When to use
 
