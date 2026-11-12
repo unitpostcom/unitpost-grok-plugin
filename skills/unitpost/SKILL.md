@@ -1084,10 +1084,11 @@ promise replies elsewhere.
 - **Never answer `OPT_OUT`**, and when `auto_replied` is true the person
   already got the STOP, HELP or START answer: don't send another. START never
   counts as marketing consent.
-- **Each received text costs 1¢** in the US and Canada, whatever its length,
-  from the same wallet as sends (STOP and HELP included). On the SMS object a
-  charged inbound text shows `segments: 1`; `usage_get` reports
-  `sms.received` and `sms.received_cents`.
+- **Each received text costs $0.008 a segment** in the US and Canada,
+  counted like a send (GSM-7 160 characters, or 70 once it holds an emoji or
+  other Unicode), from the same wallet as sends (STOP and HELP included). On
+  the SMS object a charged inbound text shows its `segments`; `usage_get`
+  reports `sms.received` and `sms.received_cents`.
 - **Pace answers.** Carriers allow about one text per second to one person:
   send one complete answer, not several fragments.
 - An agent that answers texts on its own is sending SMS: the user must have
@@ -1613,7 +1614,7 @@ MCP server's instructions name the same places, and its
 | See or revoke the CLI and MCP sign-ins | Settings → Connected apps | `unitpost logout` ends the CLI's own sign-in |
 | Import contacts, templates and settings from another email provider | Settings → Migration | it needs the other provider's API key |
 | Order a toll-free number, release a number, upload or open a brand's documents, resubmit a campaign carriers sent back | SMS → Numbers (documents: SMS → Brands) | a toll-free number needs an opt-in file a person provides, and releasing one can't be undone; registering a brand, vetting, a 10DLC campaign and its number, and a Canadian local number are on the API: `sms_quotes_create`, show the user the price, then `sms_quotes_confirm` once they agree (it needs `sms:purchase` and the owner's monthly API spend cap) |
-| Set the monthly cap on SMS purchases made by API | Settings → Billing → SMS purchases by API | only the workspace owner sets it; with none set, `sms_quotes_confirm` is refused with a 403 that names this page |
+| Set the monthly cap on SMS purchases made by API | Settings → Billing → SMS purchases by API | the workspace owner sets it there; on a workspace an organization pays for, the organization can also set it by API with its organization key (the workspace's sms_purchases_cap_cents field on the organization API, not an MCP tool); with none set, `sms_quotes_confirm` is refused with a 403 that names both |
 | Add a phone number that test SMS can go to | SMS → Senders → Testing | the number confirms with a code sent to it; `sms_test_destinations_list` lists the verified ones |
 <!-- /generated:dashboard-only -->
 
