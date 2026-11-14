@@ -323,7 +323,7 @@ address), `img_` (library image; a template uses its `path`, `/img/…`), `job_`
 `emev_` (one sent email's delivery event, `GET /email/{id}/events`), `act_`
 (an activity-log row, `GET /activity`), `ws_` (your workspace, `GET /whoami`),
 `org_` (the organization your workspace belongs to, `GET /whoami`),
-`rlog_` (an API request-log row, `GET /logs`).
+`rlog_` (an API request-log row, `GET /logs`), `file_` (a file handed to the API for one purpose, `POST /files`; operations take it as `file_id`).
 Pass ids back
 exactly as returned. Many single-resource contact/suppression endpoints also
 accept a plain **email address** in place of the id.
@@ -650,6 +650,37 @@ plain footer line (sender · Unsubscribe · Sent with Unitpost) added at send
 time — never write it yourself. Max 20,000 characters. Use `tsx` (Design) for
 anything designed.
 
+## Choosing how to send
+
+Pick the path before you write any sending code. A list send written as a loop
+of single sends runs into the request limit, and every request refused there
+is a message nobody got.
+
+<!-- generated:send-paths (packages/contracts send-paths.ts via tools/sdk-codegen; do not edit) -->
+The API takes 10 requests a second per workspace by default, shared by all of its API keys, the MCP server and the CLI. A request over the limit is answered `429` with `Retry-After`: nothing was sent, and the same request is safe to send again after that wait.
+
+| Job | REST | MCP tool | What it costs |
+| --- | --- | --- | --- |
+| One message to one person (a receipt, a sign-in code, a notification) | `POST /email` | `email_send` | One request per message. |
+| Up to 100 different messages at once | `POST /email/batch` | `email_send_batch` | Up to 100 messages in one request, counted as one request. |
+| The same content to a list (a newsletter, an announcement, any broadcast) | `POST /email/campaigns`, then `POST /email/campaigns/{id}/send` | `email_campaigns_create`, `email_campaigns_validate`, `email_campaigns_send` | One request for the whole audience. Unitpost paces the sends, retries temporary failures, handles unsubscribes and reports opens, clicks and bounces for the campaign. |
+
+A list kept outside Unitpost needs no contact import. A campaign takes up to 5,000 addresses inline as `recipients` (they become contacts, so an unsubscribe is remembered), and a batch takes up to 100 messages a request, each with its own recipient and content.
+
+- When the user wants the same content sent to a list, propose a campaign: import or pick the contacts, make a segment, then create, validate and send the campaign. Do not write a loop of single sends for it.
+- When the user needs different content per recipient, send batches of up to 100. A batch is one request: 100 messages cost one request against the limit, not 100.
+- When the user keeps the list in their own system and does not want to import contacts, do not fall back to a loop of single sends. Offer a campaign created with inline `recipients` (up to 5,000 addresses a campaign), or their own loop over batches of up to 100: one request a batch, one `Idempotency-Key` a batch, and read `failed[]` in each answer.
+- A newsletter sent as batches still needs a way to unsubscribe: a marketing-category template adds the footer and the unsubscribe header (the recipient becomes a contact); with raw `html` the user sets their own `List-Unsubscribe` headers and link.
+- Before you write or run a loop of single sends, tell the user the limit (10 requests a second by default) and pace the loop under it.
+- A 429 means that message was NOT sent. Retry it after `Retry-After`: a refused send that is not retried is lost, nothing queues it for you.
+- A 5xx or a timeout may or may not have sent the message: its answer can be lost after the send was accepted. Send every message with an `Idempotency-Key` from the first attempt, and retry with the same key and the same body: that is safe either way. Without a key, a retry after a 5xx can send twice.
+- The SDKs and the CLI already retry a 429 and a 5xx for sends with an idempotency key, honouring `Retry-After`. A raw HTTP client does not: write the retry and send the key.
+- If the user needs a higher limit, say that support can raise it for their workspace; do not work around it with more keys (the limit is per workspace).
+<!-- /generated:send-paths -->
+
+The campaign steps are under "How to run a campaign" below; the full limits
+are in the docs at `/docs/rate-limits`.
+
 ## How to send an email
 
 Provide `from` (on a verified domain), `to`, `subject`, and content as EITHER
@@ -921,8 +952,8 @@ Settings, Billing. Do not retry and do not look for a workaround.
 
 **Ids.** SMS messages are `sms_`, SMS brands are `sbrand_`, phone numbers and
 Sender IDs are `snum_`, and an SMS campaign's recipient rows are `rcpt_`. Messaging programs are `prog_`, consent
-setups `cset_`, test numbers `stdst_`, recurring SMS charges `sbill_`, carrier registrations `sreg_`, and SMS purchase
-quotes `squote_`. Contacts keep their `con_` id; a contact's phone
+setups `cset_`, test numbers `stdst_`, recurring SMS charges `sbill_`, carrier registrations `sreg_`, SMS purchase
+quotes `squote_`, and a brand's documents `sdoc_`. Contacts keep their `con_` id; a contact's phone
 number is a handle on the contact, not a separate object.
 
 **Setup.** An agent can read and write messaging programs (the reusable purpose, opt-in and reply copy a registration
@@ -931,9 +962,33 @@ read what uses an SMS template (`sms_templates_usage`) and send ONE test text of
 verified test number (`sms_templates_test_send`: `+14254147755` delivers, `+14254147167` fails, or a number from
 `sms_test_destinations_list`; billed like any text). An agent can also start and edit a brand draft
 (`sms_brands_create` / `sms_brands_update`; the 409 `brand_locked` names fields carriers hold; `missing` says what is
-still needed) and read carrier registrations (`sms_registrations_list`). A toll-free number, identity documents,
-releasing a number, adding a test number and the New number wizard stay in the dashboard: tell the user where (SMS,
-Phone numbers) instead of looking for a way around it.
+still needed) and read carrier registrations (`sms_registrations_list`).
+
+**Files and documents** (ADR-0159). A file the user gives you goes in with `files_create` first (`purpose`:
+`sms_opt_in_evidence` for an opt-in screenshot, a PNG up to 400 KB; `sms_document` for company papers, PDF/PNG/JPEG up to
+3 MB). From a public https `url`, or, for a LOCAL file, an upload session: call `files_create` with `content_type` and
+`size_bytes` (no `url`, no `data`), then `curl -T <path> -H "Content-Type: <type>" "<upload.url>"` (the URL is a
+credential: don't show it). Never put a file's base64 in a tool call unless it is a few KB. Then pass the file's id where
+it's used: `sms_brand_documents_create` (`kind` + `file_id`; the documents Sender ID countries ask for),
+`opt_in_evidence_file_id` on a `toll_free_number` quote, `opt_in_screenshot_file_id` on a `ten_dlc_campaign` quote.
+Files expire after 24 hours; what used one keeps its copy.
+
+**Carrier send-backs.** When carriers send something back, its `feedback` says what. Fix it on the brand
+(`sms_brands_update`) or the messaging program (`sms_messaging_programs_update`), then resubmit, free: a 10DLC campaign
+with `sms_registrations_resubmit`, a toll-free number with `sms_numbers_resubmit` (new evidence as a file when the
+evidence was flagged), a 10DLC brand with a new `ten_dlc_brand_registration` quote. A failed number whose fee is
+already committed comes back free with `sms_registrations_request_number`. Adding a test number and the New number
+wizard stay in the dashboard: tell the user where (SMS, Phone numbers) instead of looking for a way around it.
+
+**Giving things up** (ADR-0160; none can be undone, so ask the user first and name what goes). `sms_numbers_release`
+releases a number or one country of a Sender ID: it stops sending at once and its monthly fee ends. A 409
+`sender_release_blocked` lists scheduled campaigns and queued texts on it; release with `force: true` only once the
+user agrees they fail. An automation that uses the number (`resource_in_use`) has to be edited off it first.
+`sms_registrations_remove` takes down a 10DLC setup that has no number (releasing a 10DLC number takes its setup with it).
+A release takes a few minutes at the carrier: until then a replace or remove answers 409 `sms_release_pending`; retry later.
+`sms_registrations_replace` archives an approved brand registration so the brand can be corrected
+(`sms_brands_update`) and registered again (a `ten_dlc_brand_registration` quote); its 409 lists the numbers and setups
+to release and remove first. Read the result back with `sms_numbers_get` / `sms_registrations_get`.
 
 **Buying carrier resources** (registering a brand with US carriers or resubmitting one they sent back, vetting a
 brand, a 10DLC campaign from a messaging program with its number, the number of an approved campaign, a Canadian local
@@ -955,7 +1010,8 @@ show the new price. A 409 `quote_already_used` or `quote_expired` means quote ag
 nothing. A `502` means the carrier didn't answer, so the outcome is unknown: the quote reads `pending` until the billing
 ledger settles it to `ordered` or `failed`. Read it later (`sms_quotes_get`); never confirm it again, and don't quote
 the same purchase meanwhile (a 409 `conflict` names the order still in flight). Every API purchase emails the workspace owner and shows in the activity log
-under the key's name. A toll-free number answers 409 `dashboard_required` with `error.dashboard_url`.
+under the key's name. A toll-free number is a quote too: `toll_free_number` with `messaging_program_id` and
+`opt_in_evidence_file_id` (the screenshot of where people agree to the texts).
 
 **In the CLI**, a sample of the SMS commands (all of them are in the command
 map under [Driving the CLI](#driving-the-cli), with the shared rules on output,
@@ -1305,8 +1361,8 @@ under email means `unitpost email campaigns send`. `unitpost <resource> --help`
 lists the same tree live.
 
 <!-- generated:cli-command-map (tools/sdk-codegen skill-cli-map.ts; do not edit) -->
-152 commands over 14 resources:
-plus 54 `sms` commands (the last row).
+156 commands over 15 resources:
+plus 67 `sms` commands (the last row).
 
 | Resource | n | Commands |
 |---|---|---|
@@ -1320,11 +1376,12 @@ plus 54 `sms` commands (the last row).
 | library-images | 5 | create, delete, get, list, update |
 | workspace | 5 | list-activity, remove-image, set-image, update, whoami |
 | branding | 4 | get, remove-logo, set-logo, update |
+| files | 4 | create, delete, get, list |
 | suppressions | 4 | create, delete, get, list |
 | api-keys | 2 | list, usage |
 | logs | 1 | list |
 | usage | 1 | get |
-| sms | 54 | brands, create-brand, get, get-brand, list, numbers, send, stats, update, update-brand; billing (list-resources); campaigns (cancel, create, delete, duplicate, get, list, list-recipients, pause, reschedule, resume, send, unschedule, update, validate); consent-setups (list); messaging-programs (create, delete, duplicate, get, list, update); quotes (confirm, create, get); consent (record, request-opt-in, get); registrations (list); templates (create, delete, get, list, test-send, update, usage); test-destinations (delete, list); topics (create, delete, get, list, opt-out, update) |
+| sms | 67 | add-brand-document, brand-document-url, brands, create-brand, get, get-brand, get-brand-document, get-number, list, list-brand-documents, numbers, release-number, remove-brand-document, resubmit-number, send, stats, update, update-brand; billing (list-resources); campaigns (cancel, create, delete, duplicate, get, list, list-recipients, pause, reschedule, resume, send, unschedule, update, validate); consent-setups (list); messaging-programs (create, delete, duplicate, get, list, update); quotes (confirm, create, get); consent (record, request-opt-in, get); registrations (get, list, remove, replace, request-number, resubmit); templates (create, delete, get, list, test-send, update, usage); test-destinations (delete, list); topics (create, delete, get, list, opt-out, update) |
 
 Where the command isn't the MCP tool name with spaces for underscores:
 
@@ -1337,6 +1394,15 @@ Where the command isn't the MCP tool name with spaces for underscores:
 | `sms_brands_create` | `unitpost sms create-brand` |
 | `sms_brands_get` | `unitpost sms get-brand` |
 | `sms_brands_update` | `unitpost sms update-brand` |
+| `sms_brand_documents_list` | `unitpost sms list-brand-documents` |
+| `sms_brand_documents_create` | `unitpost sms add-brand-document` |
+| `sms_brand_documents_get` | `unitpost sms get-brand-document` |
+| `sms_brand_documents_delete` | `unitpost sms remove-brand-document` |
+| `sms_brand_documents_url` | `unitpost sms brand-document-url` |
+| `sms_registrations_request_number` | `unitpost sms registrations request-number` |
+| `sms_numbers_resubmit` | `unitpost sms resubmit-number` |
+| `sms_numbers_get` | `unitpost sms get-number` |
+| `sms_numbers_release` | `unitpost sms release-number` |
 | `sms_templates_test_send` | `unitpost sms templates test-send` |
 | `sms_test_destinations_list` | `unitpost sms test-destinations list` |
 | `sms_test_destinations_delete` | `unitpost sms test-destinations delete` |
@@ -1607,13 +1673,13 @@ MCP server's instructions name the same places, and its
 <!-- generated:dashboard-only (packages/contracts dashboard-only.ts via tools/sdk-codegen; do not edit) -->
 | To | Where in the dashboard | Note |
 |---|---|---|
-| Create, list or revoke API keys (an SMTP password is an API key) | API Keys (Settings → SMTP makes a send-only one) | a key can never create or revoke keys |
+| Create, list or revoke API keys (an SMTP password is an API key) | API Keys (Settings → SMTP makes a send-only one) | a workspace key can never create or revoke keys; an organization key mints keys for the workspaces it manages (the organization API, not an MCP tool) |
 | Invite teammates, change their permissions, transfer ownership | Settings → Team | team changes need a signed-in owner or admin |
 | Change plan, payment method or billing details; see invoices | Settings → Billing | `usage_get` reads the current period's usage |
 | Design a free-form marketing email footer | Settings → Unsubscribe and footer | the footer is built from the branding: `branding_update` sets the company name, postal address, colors and footer labels (with `branding:write`) |
 | See or revoke the CLI and MCP sign-ins | Settings → Connected apps | `unitpost logout` ends the CLI's own sign-in |
 | Import contacts, templates and settings from another email provider | Settings → Migration | it needs the other provider's API key |
-| Order a toll-free number, release a number, upload or open a brand's documents, resubmit a campaign carriers sent back | SMS → Numbers (documents: SMS → Brands) | a toll-free number needs an opt-in file a person provides, and releasing one can't be undone; registering a brand, vetting, a 10DLC campaign and its number, and a Canadian local number are on the API: `sms_quotes_create`, show the user the price, then `sms_quotes_confirm` once they agree (it needs `sms:purchase` and the owner's monthly API spend cap) |
+| Request an alphanumeric Sender ID, or retry a Sender ID or a Canadian local number | SMS → Numbers | country forms and their documents (the documents themselves are on the API: `sms_brand_documents_create`); the rest of SMS setup is on the API: ordering (`sms_quotes_create`, show the user the price, then `sms_quotes_confirm` once they agree), resubmitting what carriers sent back (`sms_registrations_resubmit`, `sms_numbers_resubmit`) and giving things up (`sms_numbers_release`, `sms_registrations_remove`, `sms_registrations_replace`: ask the user first, they can't be undone) |
 | Set the monthly cap on SMS purchases made by API | Settings → Billing → SMS purchases by API | the workspace owner sets it there; on a workspace an organization pays for, the organization can also set it by API with its organization key (the workspace's sms_purchases_cap_cents field on the organization API, not an MCP tool); with none set, `sms_quotes_confirm` is refused with a 403 that names both |
 | Add a phone number that test SMS can go to | SMS → Senders → Testing | the number confirms with a code sent to it; `sms_test_destinations_list` lists the verified ones |
 <!-- /generated:dashboard-only -->
