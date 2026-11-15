@@ -953,7 +953,7 @@ Settings, Billing. Do not retry and do not look for a workaround.
 **Ids.** SMS messages are `sms_`, SMS brands are `sbrand_`, phone numbers and
 Sender IDs are `snum_`, and an SMS campaign's recipient rows are `rcpt_`. Messaging programs are `prog_`, consent
 setups `cset_`, test numbers `stdst_`, recurring SMS charges `sbill_`, carrier registrations `sreg_`, SMS purchase
-quotes `squote_`, and a brand's documents `sdoc_`. Contacts keep their `con_` id; a contact's phone
+quotes `squote_`, a brand's documents `sdoc_`, and text-to-join keywords `sjk_`. Contacts keep their `con_` id; a contact's phone
 number is a handle on the contact, not a separate object.
 
 **Setup.** An agent can read and write messaging programs (the reusable purpose, opt-in and reply copy a registration
@@ -1362,7 +1362,7 @@ lists the same tree live.
 
 <!-- generated:cli-command-map (tools/sdk-codegen skill-cli-map.ts; do not edit) -->
 156 commands over 15 resources:
-plus 67 `sms` commands (the last row).
+plus 71 `sms` commands (the last row).
 
 | Resource | n | Commands |
 |---|---|---|
@@ -1381,7 +1381,7 @@ plus 67 `sms` commands (the last row).
 | api-keys | 2 | list, usage |
 | logs | 1 | list |
 | usage | 1 | get |
-| sms | 67 | add-brand-document, brand-document-url, brands, create-brand, get, get-brand, get-brand-document, get-number, list, list-brand-documents, numbers, release-number, remove-brand-document, resubmit-number, send, stats, update, update-brand; billing (list-resources); campaigns (cancel, create, delete, duplicate, get, list, list-recipients, pause, reschedule, resume, send, unschedule, update, validate); consent-setups (list); messaging-programs (create, delete, duplicate, get, list, update); quotes (confirm, create, get); consent (record, request-opt-in, get); registrations (get, list, remove, replace, request-number, resubmit); templates (create, delete, get, list, test-send, update, usage); test-destinations (delete, list); topics (create, delete, get, list, opt-out, update) |
+| sms | 71 | add-brand-document, add-contact, add-join-keyword, brand-document-url, brands, create-brand, get, get-brand, get-brand-document, get-number, list, list-brand-documents, list-join-keywords, numbers, release-number, remove-brand-document, remove-join-keyword, resubmit-number, send, stats, update, update-brand; billing (list-resources); campaigns (cancel, create, delete, duplicate, get, list, list-recipients, pause, reschedule, resume, send, unschedule, update, validate); consent-setups (list); messaging-programs (create, delete, duplicate, get, list, update); quotes (confirm, create, get); consent (record, request-opt-in, get); registrations (get, list, remove, replace, request-number, resubmit); templates (create, delete, get, list, test-send, update, usage); test-destinations (delete, list); topics (create, delete, get, list, opt-out, update) |
 
 Where the command isn't the MCP tool name with spaces for underscores:
 
@@ -1389,6 +1389,7 @@ Where the command isn't the MCP tool name with spaces for underscores:
 |---|---|
 | `email_send_batch` | `unitpost email batch` |
 | `email_list_events` | `unitpost email list-events` |
+| `sms_add_contact` | `unitpost sms add-contact` |
 | `sms_brands_list` | `unitpost sms brands` |
 | `sms_numbers_list` | `unitpost sms numbers` |
 | `sms_brands_create` | `unitpost sms create-brand` |
@@ -1403,6 +1404,9 @@ Where the command isn't the MCP tool name with spaces for underscores:
 | `sms_numbers_resubmit` | `unitpost sms resubmit-number` |
 | `sms_numbers_get` | `unitpost sms get-number` |
 | `sms_numbers_release` | `unitpost sms release-number` |
+| `sms_join_keywords_list` | `unitpost sms list-join-keywords` |
+| `sms_join_keywords_create` | `unitpost sms add-join-keyword` |
+| `sms_join_keywords_delete` | `unitpost sms remove-join-keyword` |
 | `sms_templates_test_send` | `unitpost sms templates test-send` |
 | `sms_test_destinations_list` | `unitpost sms test-destinations list` |
 | `sms_test_destinations_delete` | `unitpost sms test-destinations delete` |
