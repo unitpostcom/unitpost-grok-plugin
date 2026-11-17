@@ -62,6 +62,7 @@ The Unitpost MCP server exposes one tool per API operation (named
 | **Endpoint** | `https://mcp.unitpost.com/mcp` (streamable HTTP) |
 | **Auth (recommended)** | OAuth 2.1 — add the URL, approve in the browser, no key to copy |
 | **Auth (legacy)** | `Authorization: Bearer pk_live_…` — API key from **https://www.unitpost.com → Settings → API keys** |
+| **Auth (organization key)** | `Authorization: Bearer ok_live_…` — a platform's organization key; that connection lists only the `organization_*` tools and `docs_search` (see "Organization keys") |
 | **Toolsets (optional)** | `?toolsets=default,campaigns` on the URL, or an `X-MCP-Toolsets` header; `all` for every tool; `?readonly=1` for read-only tools |
 
 With no parameters the server lists its default set of tools. Newer tools come
@@ -322,7 +323,8 @@ address), `img_` (library image; a template uses its `path`, `/img/…`), `job_`
 `msg_` (webhook delivery; its `svix_id` is the `svix-id` header it was sent with),
 `emev_` (one sent email's delivery event, `GET /email/{id}/events`), `act_`
 (an activity-log row, `GET /activity`), `ws_` (your workspace, `GET /whoami`),
-`org_` (the organization your workspace belongs to, `GET /whoami`),
+`org_` (the organization your workspace belongs to, `GET /whoami`), `pq_` (an
+organization's plan quote for one of its workspaces),
 `rlog_` (an API request-log row, `GET /logs`), `file_` (a file handed to the API for one purpose, `POST /files`; operations take it as `file_id`).
 Pass ids back
 exactly as returned. Many single-resource contact/suppression endpoints also
@@ -1002,9 +1004,14 @@ number) is two calls, and the user approves the price in between:
    the same key if you retry, so it can't buy twice. Never confirm a quote the user hasn't seen.
 
 The confirm needs `sms:purchase`, which no key preset includes: a member who holds it ticks it on the key or the app.
-It also counts against the owner's monthly cap for SMS purchases by API (Settings, Billing, SMS purchases by API);
-with no cap set every API purchase is refused (403 `api_spend_cap_not_set`), and one past it is 403
-`api_spend_cap_exceeded`. Tell the user where to set it; never ask them for a card or try another way. A 409
+It also counts against the workspace's monthly cap for SMS purchases by API: a workspace that pays for its own paid
+plan usually starts with a $75 cap (not when a key or app of it already held `sms:purchase`; one its organization pays
+for follows the organization Owner's rules); read the cap and what's left this month with `spend_caps_get`. With no cap set every API purchase is
+refused (403 `api_spend_cap_not_set`), and one past it is 403 `api_spend_cap_exceeded`. Never set or raise a spend
+cap to get past either: tell the user the cap and what's left, and that the workspace owner can raise it (Settings →
+Billing → SMS purchases by API, or `spend_caps_update` with a key the owner gave `spend_caps:write`). Call
+`spend_caps_update` only when the user asks, with the amount they name. Never ask them for a card or try another
+way. A 409
 `price_changed` or `quote_stale` means the price or what it buys changed (a brand or program edited): quote again and
 show the new price. A 409 `quote_already_used` or `quote_expired` means quote again. A carrier rejection charges
 nothing. A `502` means the carrier didn't answer, so the outcome is unknown: the quote reads `pending` until the billing
@@ -1203,6 +1210,11 @@ and the `sms.suppressed` webhook `reason`.
   for `email_send`; without one a retried call texts (and bills) twice.
 - `scheduled_at` on `sms_send` is ISO 8601 with `Z` or an offset (normalized
   to UTC). A time in the past is not refused: the text goes out right away.
+- Tag each text with who or what it was for: `tags: [{ "name": "customer",
+  "value": "acme" }]` on `sms_send` (at most 10; each half letters, digits,
+  `_` or `-`; a 422 on tags sent nothing), then find them with `sms_list`
+  `tag=customer:acme` (comma-separate several: texts with all of them).
+  Received texts have no tags.
 - A `403` with `limit_reached` (and `feature_not_in_plan` in
   `error.details`) from `sms_send` or an `sms_campaigns_*`
   create/send/resume/reschedule means the plan does not include SMS (see
@@ -1296,6 +1308,113 @@ walks the whole method:
 6. **Offer to build the Unitpost side** with the tools: the template, contact
    fields, and a webhook for the way back.
 
+## Organization keys (platforms that give each customer a workspace)
+
+An organization key (`ok_live_…`, made by an Owner or Admin under
+Organization → API, once staff approved the organization) manages the
+organization's workspaces. It never sends: sending, contacts and templates
+take a workspace key. Each surface takes one kind of key:
+
+- **MCP** — connect with `Authorization: Bearer ok_live_…`. That connection
+  lists `organization_workspaces_*` (list, create, get, update, close,
+  restore), `organization_workspace_keys_create`, `organization_webhooks_*`,
+  `organization_usage_list`, `organization_plan_quotes_*`,
+  `organization_shared_plan_*` and `docs_search`, nothing else; every tool's `id` (the organization, `org_…`) defaults to the
+  key's organization. A workspace connection never lists them. OAuth sign-in
+  is workspace-only.
+- **SDKs** — the second client: `new UnitpostOrganization()` (Node),
+  `UnitpostOrganization()` (Python), `Unitpost::OrganizationClient.new`
+  (Ruby), `new OrganizationClient()` (PHP), `UnitpostOrganization::`
+  facade (Laravel), `unitpost.NewOrganization()` (Go),
+  `new UnitpostOrganization()` (Java), `UnitpostOrganization::new()` (Rust),
+  `new UnitpostOrganizationClient()` (.NET). Each reads `UNITPOST_ORG_KEY`
+  and `UNITPOST_ORGANIZATION_ID`; accessors `workspaces`, `workspaceKeys`,
+  `webhooks`, `usage`, `planQuotes`, `sharedPlan` (spelled the language's
+  way).
+- **CLI** — `unitpost org …` (`unitpost org workspaces list`,
+  `unitpost org workspace-keys create <workspace_id> --name Production`),
+  with `UNITPOST_ORG_KEY` and `UNITPOST_ORGANIZATION_ID` or `--org-key` and
+  `--org`.
+
+How to use it:
+
+1. **One workspace per customer.** Create it with `external_id` set to your
+   own id for that customer and an idempotency key you keep for retries
+   (creating requires one; the same key never makes two). Find it again with
+   the `external_id` filter, not by name. A create with a paid `plan` charges
+   the organization's card at once: tell the person the plan and its price
+   and create it only on their yes.
+2. **Send as the customer with their workspace key.** Mint it with
+   `organization_workspace_keys_create` (`scope: sending` unless they need
+   more), store `key` at once (it's in that answer only), and use it in a
+   workspace connection or `new Unitpost(key)`.
+3. **Closing stops sending.** `organization_workspaces_close` stops the
+   workspace at once. It can be restored for 30 days; unless restored, it is
+   deleted at the later of those 30 days and 7 days after the end of the
+   billing period it closed in (the closed workspace's `deletes_at`): ask
+   first.
+4. **A plan change is quote, then confirm.** `organization_plan_quotes_create`
+   prices it and changes nothing; show the person `kind`, `due_now_cents` and
+   `effective_at`, and only on their yes call
+   `organization_plan_quotes_confirm` with the quote's `confirm_token` and an
+   idempotency key (it charges the organization's card). On `402
+   payment_failed` nothing changed: once the card is fixed, confirm the same
+   quote again with the same key. On `quote_stale` or `quote_expired`, ask for
+   a new quote, show the person its price and confirm only on their yes again
+   (it can price differently). Plan changes need the opt-in `organizations:billing`, on a key whose
+   creator is still an Owner; a 422 with `details[0].code: "plan_not_allowed"` means the plan is above the
+   Owner's API rules: tell the person (only an Owner raises it, on
+   Organization → API) and never pick a cheaper tier on your own. A quote
+   with `moves_to_organization: true` moves a free workspace onto the
+   organization's card: say so before confirming. `organization_billing_off`
+   means an Owner turns organization billing on first (Organization →
+   Billing). A quote's `pending_change` is a downgrade already scheduled for
+   the period end: to undo it, quote the current plan and tier and, on the
+   person's yes, confirm that `noop` (it keeps the plan). On
+   `plan_change_in_progress`, wait a minute, ask for a new quote and check
+   what the message names (the blocking quote's `current`, `pending_change`,
+   or a quote for free answering `noop`); never confirm another quote before
+   one is answered. On a 500 with `plan_change_outcome_unknown`, don't retry
+   and don't confirm another quote: new quotes answer
+   `plan_change_in_progress` for at most 24 hours, until the change is
+   written back.
+5. **One webhook endpoint for every workspace.** Register one organization
+   endpoint, not one per workspace: it gets every workspace's events, each
+   delivery naming its `workspace_id` and `external_id`, so route on
+   `external_id`. Subscribe only to the event types you handle (`email.*` is a
+   delivery per email event in every workspace) and verify signatures as for
+   workspace endpoints. An organization has at most 5 endpoints: with 5, change
+   an existing endpoint's `events` instead of creating one. While Unitpost has
+   withdrawn the organization's API access, its endpoints receive nothing
+   (queued deliveries fail); new events flow again once it is approved. The
+   delivery log's `workspace_id` / `external_id` filters never widen: a value
+   it can't read answers an empty page with a `Unitpost-Warning` (`422` under
+   `Unitpost-Strict: true`).
+6. **Usage per workspace** is `organization_usage_list`, at most 25 rows a
+   page: to total the organization, page with `after` until `has_more` is
+   false (the SDKs' `usage.listAll` pages for you) and add the rows'
+   `spend.total_cents` (there is no total field). For
+   a past month pass `period` as an instant in it; a null `period_start` means
+   no usage then.
+7. **The shared plan** (one plan whose allowance the organization's
+   workspaces share). `organization_shared_plan_get` says whether there is
+   one (`status` is `none` until it is bought) and how much of the shared
+   allowance is used; `organization_shared_plan_list_workspaces` lists the
+   workspaces on it with their caps and draw. Asking Unitpost to turn it on
+   (`approved` false), buying, upgrading and ending it are dashboard-only.
+   `organization_shared_plan_add_workspace` moves a workspace onto the
+   organization's card and the shared allowance, and
+   `organization_shared_plan_remove_workspace` drops it to Free or leaves it
+   needing a plan (`drops_to`): tell the person which and act only on their
+   yes. Both need `organizations:billing`. A refusal's `details[0].code` names
+   the reason (`own_plan`: its own plan must end first; `limit_reached`: the
+   plan covers no more workspaces): say it, don't work around it. Set a cap
+   (`organization_shared_plan_update_workspace`, or `cap_cents` when adding)
+   only to the amount the person names. A member workspace reads its own cap
+   on `spend_caps_get` (`shared_plan`) and can't change it there.
+
+A workspace's own **spend caps** (`spend_caps_get`, `spend_caps_update`; `unitpost spend-caps get|update`; SDK `spendCaps`) are a workspace operation: the SMS purchases cap is set there with `spend_caps:write`, which only the workspace owner holds. A workspace an organization pays for answers `403 billed_by_organization`; its organization sets the cap with `sms_purchases_cap_cents` on `organization_workspaces_update`.
+
 ## Dashboard Unit (Ask Unit) — Brand Kit & Memory
 
 **Brand Kit's primary job is AI generation** — Ask Unit and MCP/API agents use
@@ -1361,12 +1480,13 @@ under email means `unitpost email campaigns send`. `unitpost <resource> --help`
 lists the same tree live.
 
 <!-- generated:cli-command-map (tools/sdk-codegen skill-cli-map.ts; do not edit) -->
-156 commands over 15 resources:
+184 commands over 17 resources:
 plus 71 `sms` commands (the last row).
 
 | Resource | n | Commands |
 |---|---|---|
 | email | 68 | batch, get, list, list-events, received-raw, retry, send, stats, update; campaigns (cancel, create, delete, duplicate, get, list, list-affected, list-recipients, list-stats, pause, remove-affected, request-review, reschedule, resume, send, stats, unschedule, update, validate); batches (cancel, get, list); domains (create, delete, diagnose, get, list, update, verify); senders (create, delete, get, list, update); received (attachment-url, get, list); templates (create, delete, duplicate, from-library, get, list, list-versions, render, restore-version, test-send, update, usage); threads (delete, get, list, reply); topics (create, delete, get, list, opt-out, update) |
+| org | 26 | plan-quotes (confirm, create, get); shared-plan (add-workspace, get, list-workspaces, remove-workspace, update-workspace); usage (list); webhooks (create, delete, flush, get, list, list-deliveries, replay-delivery, rotate-secret, test, update); workspace-keys (create); workspaces (close, create, get, list, restore, update) |
 | contacts | 17 | activity, addresses, cancel-import, create, delete, export, get, list, update; imports (get, create, list, retry); segments (list); topics (list, set, update) |
 | brand-kits | 12 | accept-import, add-graphic, cancel-import, create, delete, get, get-import, import, list, reset, set-default, update |
 | segments | 12 | all-contacts, create, delete, get, list, preview, preview-filter, update; members (add, list, remove, update) |
@@ -1379,6 +1499,7 @@ plus 71 `sms` commands (the last row).
 | files | 4 | create, delete, get, list |
 | suppressions | 4 | create, delete, get, list |
 | api-keys | 2 | list, usage |
+| spend-caps | 2 | get, update |
 | logs | 1 | list |
 | usage | 1 | get |
 | sms | 71 | add-brand-document, add-contact, add-join-keyword, brand-document-url, brands, create-brand, get, get-brand, get-brand-document, get-number, list, list-brand-documents, list-join-keywords, numbers, release-number, remove-brand-document, remove-join-keyword, resubmit-number, send, stats, update, update-brand; billing (list-resources); campaigns (cancel, create, delete, duplicate, get, list, list-recipients, pause, reschedule, resume, send, unschedule, update, validate); consent-setups (list); messaging-programs (create, delete, duplicate, get, list, update); quotes (confirm, create, get); consent (record, request-opt-in, get); registrations (get, list, remove, replace, request-number, resubmit); templates (create, delete, get, list, test-send, update, usage); test-destinations (delete, list); topics (create, delete, get, list, opt-out, update) |
@@ -1482,6 +1603,34 @@ Where the command isn't the MCP tool name with spaces for underscores:
 | `webhooks_rotate_secret` | `unitpost webhooks rotate-secret` |
 | `webhooks_list_deliveries` | `unitpost webhooks list-deliveries` |
 | `webhooks_replay_delivery` | `unitpost webhooks replay-delivery` |
+| `spend_caps_get` | `unitpost spend-caps get` |
+| `spend_caps_update` | `unitpost spend-caps update` |
+| `organization_workspaces_list` | `unitpost org workspaces list` |
+| `organization_workspaces_create` | `unitpost org workspaces create` |
+| `organization_workspaces_get` | `unitpost org workspaces get` |
+| `organization_workspaces_update` | `unitpost org workspaces update` |
+| `organization_workspaces_close` | `unitpost org workspaces close` |
+| `organization_workspaces_restore` | `unitpost org workspaces restore` |
+| `organization_workspace_keys_create` | `unitpost org workspace-keys create` |
+| `organization_webhooks_list` | `unitpost org webhooks list` |
+| `organization_webhooks_create` | `unitpost org webhooks create` |
+| `organization_webhooks_get` | `unitpost org webhooks get` |
+| `organization_webhooks_update` | `unitpost org webhooks update` |
+| `organization_webhooks_delete` | `unitpost org webhooks delete` |
+| `organization_webhooks_rotate_secret` | `unitpost org webhooks rotate-secret` |
+| `organization_webhooks_test` | `unitpost org webhooks test` |
+| `organization_webhooks_list_deliveries` | `unitpost org webhooks list-deliveries` |
+| `organization_webhooks_replay_delivery` | `unitpost org webhooks replay-delivery` |
+| `organization_webhooks_flush` | `unitpost org webhooks flush` |
+| `organization_usage_list` | `unitpost org usage list` |
+| `organization_plan_quotes_create` | `unitpost org plan-quotes create` |
+| `organization_plan_quotes_get` | `unitpost org plan-quotes get` |
+| `organization_plan_quotes_confirm` | `unitpost org plan-quotes confirm` |
+| `organization_shared_plan_get` | `unitpost org shared-plan get` |
+| `organization_shared_plan_list_workspaces` | `unitpost org shared-plan list-workspaces` |
+| `organization_shared_plan_add_workspace` | `unitpost org shared-plan add-workspace` |
+| `organization_shared_plan_update_workspace` | `unitpost org shared-plan update-workspace` |
+| `organization_shared_plan_remove_workspace` | `unitpost org shared-plan remove-workspace` |
 <!-- /generated:cli-command-map -->
 
 Plus the CLI's own utilities (these are about the CLI, not the API):
@@ -1677,14 +1826,13 @@ MCP server's instructions name the same places, and its
 <!-- generated:dashboard-only (packages/contracts dashboard-only.ts via tools/sdk-codegen; do not edit) -->
 | To | Where in the dashboard | Note |
 |---|---|---|
-| Create, list or revoke API keys (an SMTP password is an API key) | API Keys (Settings → SMTP makes a send-only one) | a workspace key can never create or revoke keys; an organization key mints keys for the workspaces it manages (the organization API, not an MCP tool) |
+| Create, list or revoke API keys (an SMTP password is an API key) | API Keys (Settings → SMTP makes a send-only one) | a workspace key can never create or revoke keys; an organization key mints keys for the workspaces it manages (`organization_workspace_keys_create` on an organization-key connection) |
 | Invite teammates, change their permissions, transfer ownership | Settings → Team | team changes need a signed-in owner or admin |
 | Change plan, payment method or billing details; see invoices | Settings → Billing | `usage_get` reads the current period's usage |
 | Design a free-form marketing email footer | Settings → Unsubscribe and footer | the footer is built from the branding: `branding_update` sets the company name, postal address, colors and footer labels (with `branding:write`) |
 | See or revoke the CLI and MCP sign-ins | Settings → Connected apps | `unitpost logout` ends the CLI's own sign-in |
 | Import contacts, templates and settings from another email provider | Settings → Migration | it needs the other provider's API key |
 | Request an alphanumeric Sender ID, or retry a Sender ID or a Canadian local number | SMS → Numbers | country forms and their documents (the documents themselves are on the API: `sms_brand_documents_create`); the rest of SMS setup is on the API: ordering (`sms_quotes_create`, show the user the price, then `sms_quotes_confirm` once they agree), resubmitting what carriers sent back (`sms_registrations_resubmit`, `sms_numbers_resubmit`) and giving things up (`sms_numbers_release`, `sms_registrations_remove`, `sms_registrations_replace`: ask the user first, they can't be undone) |
-| Set the monthly cap on SMS purchases made by API | Settings → Billing → SMS purchases by API | the workspace owner sets it there; on a workspace an organization pays for, the organization can also set it by API with its organization key (the workspace's sms_purchases_cap_cents field on the organization API, not an MCP tool); with none set, `sms_quotes_confirm` is refused with a 403 that names both |
 | Add a phone number that test SMS can go to | SMS → Senders → Testing | the number confirms with a code sent to it; `sms_test_destinations_list` lists the verified ones |
 <!-- /generated:dashboard-only -->
 
