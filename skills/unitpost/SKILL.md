@@ -1471,7 +1471,16 @@ The practical consequence: the MCP tool name with spaces for underscores is
 usually the command. Some aren't (`contact_imports_create` is
 `unitpost contacts imports create`), and the table under the command map lists
 every one, so check it before you guess. A new endpoint becomes a new command
-with no CLI release, so the tree below is what the API has today.
+with no hand-written code, and the tree below is what the API has today.
+
+An installed CLI has only the commands of its release, though. When
+`unitpost <command>` answers `Unknown command`, or an SDK has no method for
+something, the API may still have it: the installed version can be behind.
+Compare `unitpost --version` with `npm view unitpost-cli version` (the SDK:
+its registry's latest) and upgrade. What the API can do is what the API
+reference (https://www.unitpost.com/docs/api) and the MCP server's tool list
+say, never what an installed CLI or SDK lacks. Until the upgrade, call the
+endpoint over HTTP with an API key.
 
 ### Command map
 
